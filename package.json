@@ -4,7 +4,8 @@
   "description": "",
   "main": "./dist/index.js",
   "scripts": {
-    "start:get_page_ids": "npx tsc && node ./dist/get_page_ids.js",
+    "start:get_page_slugs": "npx tsc && node ./dist/get_page_slugs.js",
+    "start:get_page_node": "npx tsc && node ./dist/get_page_node.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
