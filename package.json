@@ -1,10 +1,10 @@
 {
-  "name": "",
+  "name": "wikipedia-network",
   "version": "1.0.0",
   "description": "",
   "main": "./dist/index.js",
   "scripts": {
-    "start": "npx tsc && node ./dist/index.js",
+    "start:get_page_ids": "npx tsc && node ./dist/get_page_ids.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,5 +12,10 @@
   "license": "ISC",
   "devDependencies": {
     "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@types/node": "^20.8.10",
+    "cheerio": "^1.0.0-rc.12",
+    "mongodb": "^6.2.0"
   }
 }
