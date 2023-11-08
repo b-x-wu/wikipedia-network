@@ -11,11 +11,13 @@ export interface PageEdge {
 }
 
 export interface PageNode {
-    readonly value: Page
-    outEdges: PageEdge[]
+    readonly page: Page
+    outSlugs: PageSlug[]
 }
 
 export const PAGE_PREFIX = 'https://en.wikipedia.org/wiki/'
+
+export const PAGE_SLUGS_NAME = "page_urls.txt"
 
 export const getUrlFromPageSlug = (pageSlug: PageSlug): string => {
     return PAGE_PREFIX + pageSlug

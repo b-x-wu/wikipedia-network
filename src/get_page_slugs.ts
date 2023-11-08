@@ -1,13 +1,12 @@
 import * as cheerio from 'cheerio'
 import { createWriteStream } from 'fs'
-
-const OUT_FILE_NAME = "page_urls.txt"
+import { PAGE_SLUGS_NAME } from './types'
 
 const main = async (): Promise<void> => {
     let allPagesUrl: string | undefined = "/wiki/Special:AllPages"
     let kill: boolean = false
     const pageIds: string[] = []
-    const outFileStream = createWriteStream(OUT_FILE_NAME, { flags: 'a' })
+    const outFileStream = createWriteStream(PAGE_SLUGS_NAME, { flags: 'a' })
 
     process.on('SIGINT', () => { outFileStream.end(); kill = true; })
     process.on('SIGABRT', () => { outFileStream.end(); kill = true; })
