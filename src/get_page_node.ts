@@ -8,8 +8,19 @@ import { once } from 'events'
 dotenv.config()
 
 const getPageNode = async (pageSlug: string): Promise<PageNode> => {
-    const res = await fetch(getUrlFromPageSlug(pageSlug))
-    if (res.redirected) {
+    let res: Response | undefined = undefined
+    try {
+        res = await fetch(getUrlFromPageSlug(pageSlug))
+    } catch {
+        console.log(`Fetch failed for slug: ${pageSlug}\nTrying again.`)
+        return getPageNode(pageSlug)
+    }
+
+    if (res == null || res.status >= 400) {
+        throw new Error(`Invalid response for slug: ${pageSlug}\nTerminating.`)
+    }
+
+    if (res != null && res.redirected) {
         const redirectPageSlug = res.url.match(/\/wiki\/(.*)$/)?.at(1)
         if (redirectPageSlug == null) throw new Error(`Cannot find redirect page slug: ${pageSlug}`)
         return {
@@ -83,11 +94,15 @@ const main = async () => {
         })
 
         // await once(rl, 'close')
-
+        const START_FROM = ".ch_(newspaper)"
+        let go = false
         for await (const line of rl) {
-            const pageNode = await getPageNode(line)
-            await storePageNode(pageNode, session)
-            console.log(`Stored page: ${decodeURIComponent(line)}`)
+            if (go) {
+                const pageNode = await getPageNode(line)
+                await storePageNode(pageNode, session)
+                console.log(`Stored page: ${decodeURIComponent(line)}`)
+            }
+            if (line === START_FROM) go = true
         }
 
     } catch (e: any) {
