@@ -1,4 +1,7 @@
 export interface Page {
-    readonly title: string
-    readonly isRedirect: boolean
+    id: number
+    title: string
+    namespace: number
+    text: string
+    redirect?: string
 }
