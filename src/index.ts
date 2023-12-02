@@ -9,8 +9,8 @@ dotenv.config()
 const WIKIPEDIA_ZIP_FILE_NAME = 'enwiki-20230820-pages-articles-multistream.xml.bz2'
 
 const main = async () => {
-    const skip = 1000
-    let count = 1000
+    const skip = 100
+    let count = 10
     const saxStream: SAXStream = new SAXStream(true)
     const wikipediaStream = new WikipediaPageEventListener(saxStream)
     wikipediaStream.registerWikipediaPageEventHandler((page) => {

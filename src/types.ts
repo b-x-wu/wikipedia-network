@@ -1,5 +1,4 @@
 export interface Page {
-    id: number
     title: string
     namespace: number
     text: string
@@ -7,9 +6,13 @@ export interface Page {
 }
 
 export interface PageNode {
-    id: number
     title: string
     namespace: number
     isRedirect: boolean
-    links: Set<string> // titles of pages this page links to
+    pageLinks: Set<string> // titles of pages this page links to
+}
+
+export interface Query {
+    text: string
+    parameters?: any
 }

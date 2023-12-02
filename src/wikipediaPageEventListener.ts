@@ -1,4 +1,3 @@
-import { Writable } from 'node:stream'
 import { Page } from './types'
 import { QualifiedTag, SAXStream, Tag } from 'sax'
 
@@ -13,7 +12,6 @@ export class WikipediaPageEventListener {
     // state
     private _isProcessingPage: boolean = false
     private _isProcessingPageField: { [field in keyof Required<Page>]: boolean } = {
-        id: false,
         title: false,
         namespace: false,
         text: false,
@@ -43,11 +41,6 @@ export class WikipediaPageEventListener {
                 return
             }
 
-            if (tag.name === 'id') {
-                this._isProcessingPageField.id = true
-                return
-            }
-
             if (tag.name === 'redirect' && tag.isSelfClosing && tag.attributes['title'] != null) {
                 this._processingPage.redirect = tag.attributes['title'].toString()
             }
@@ -69,11 +62,6 @@ export class WikipediaPageEventListener {
                 return
             }
 
-            if (tagName === 'id') {
-                this._isProcessingPageField.id = false
-                return
-            }
-
             if (tagName === 'ns') {
                 this._isProcessingPageField.namespace = false
                 return
@@ -87,12 +75,6 @@ export class WikipediaPageEventListener {
 
         stream.on('text', (text: string) => {
             if (!this._isProcessingPage) {
-                return
-            }
-
-            if (this._isProcessingPageField.id) {
-                const parsedId = parseInt(text)
-                this._processingPage.id = Number.isInteger(parsedId) ? parsedId : undefined
                 return
             }
 
@@ -116,7 +98,6 @@ export class WikipediaPageEventListener {
     private static _isPage(partialPage: Partial<Page>): partialPage is Page {
         if (
             partialPage.text == null ||
-            partialPage.id == null ||
             partialPage.namespace == null ||
             partialPage.title == null
         ) {
@@ -129,7 +110,6 @@ export class WikipediaPageEventListener {
     private _clearState() {
         this._isProcessingPage = false
         this._isProcessingPageField = {
-            id: false,
             title: false,
             namespace: false,
             text: false,
