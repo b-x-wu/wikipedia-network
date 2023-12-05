@@ -1,15 +1,11 @@
-import { Page } from './types'
-import { QualifiedTag, SAXStream, Tag } from 'sax'
+import { QualifiedTag, SAXParser, SAXStream, Tag } from "sax";
+import { Readable, Writable } from "stream";
+import { Page } from "./types";
+import { isPage } from "./pageUtils";
 
-/**
- * With a given SAX stream, listens for when a new page is processed and fires off
- * an event handler (if it has been registered).
- */
-export class WikipediaPageEventListener {
+export class WikipediaStream extends Writable {
 
-    private _pageEventHandler: (page: Readonly<Page>) => void = (page: Page) => {}
-
-    // state
+    private _parser: SAXParser
     private _isProcessingPage: boolean = false
     private _isProcessingPageField: { [field in keyof Required<Page>]: boolean } = {
         title: false,
@@ -18,9 +14,13 @@ export class WikipediaPageEventListener {
         redirect: false
     }
     private _processingPage: Partial<Page> = {}
+    private _pageListener: (page: Readonly<Page>) => void = (page) => {}
 
-    constructor(stream: SAXStream) {
-        stream.on('opentag', (tag: Tag | QualifiedTag) => {
+    constructor() {
+        super()
+        this._parser = new SAXParser(true)
+
+        this._parser.onopentag = (tag: Tag | QualifiedTag) => {
             if (tag.name === 'page') {
                 this._isProcessingPage = true
                 return
@@ -44,13 +44,13 @@ export class WikipediaPageEventListener {
             if (tag.name === 'redirect' && tag.isSelfClosing && tag.attributes['title'] != null) {
                 this._processingPage.redirect = tag.attributes['title'].toString()
             }
-        })
+        }
 
-        stream.on('closetag', (tagName: string) => {
+        this._parser.onclosetag =  (tagName: string) => {
             if (tagName === 'page') {
                 // Fire off page listener if the page is valid
-                if (WikipediaPageEventListener._isPage(this._processingPage)) {
-                    this._pageEventHandler(this._processingPage)
+                if (isPage(this._processingPage)) {
+                    this._pageListener(this._processingPage)
                 }
 
                 this._clearState()
@@ -71,9 +71,9 @@ export class WikipediaPageEventListener {
                 this._isProcessingPageField.text = false
                 return
             }
-        })
+        }
 
-        stream.on('text', (text: string) => {
+        this._parser.ontext = (text: string) => {
             if (!this._isProcessingPage) {
                 return
             }
@@ -92,19 +92,7 @@ export class WikipediaPageEventListener {
             if (this._isProcessingPageField.text) {
                 this._processingPage.text = text
             }
-        })
-    }
-
-    private static _isPage(partialPage: Partial<Page>): partialPage is Page {
-        if (
-            partialPage.text == null ||
-            partialPage.namespace == null ||
-            partialPage.title == null
-        ) {
-            return false
         }
-
-        return true
     }
 
     private _clearState() {
@@ -118,7 +106,38 @@ export class WikipediaPageEventListener {
         this._processingPage = {}
     }
 
-    public registerWikipediaPageEventHandler(handler: (page: Readonly<Page>) => void) {
-        this._pageEventHandler = handler
+    _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null | undefined) => void): void {
+        let callbackError: Error | undefined
+        try {
+            const data = chunk.toString()
+            this._parser.write(data)
+            this.emit("data", data)
+        } catch (e: any) {
+            callbackError = new Error(e.toString())
+        } finally {
+            callback(callbackError)
+        }
+    }
+
+    on(event: "close", listener: () => void): this;
+    on(event: "data", listener: (chunk: any) => void): this;
+    on(event: "drain", listener: () => void): this;
+    on(event: "end", listener: () => void): this;
+    on(event: "error", listener: (err: Error) => void): this;
+    on(event: "finish", listener: () => void): this;
+    on(event: "pause", listener: () => void): this;
+    on(event: "pipe", listener: (src: Readable) => void): this;
+    on(event: "readable", listener: () => void): this;
+    on(event: "resume", listener: () => void): this;
+    on(event: "unpipe", listener: (src: Readable) => void): this;
+    on(event: "page", listener: (page: Readonly<Page>) => void): this;
+    on(event: string | symbol, listener: (...args: any[]) => void): this {
+        if (event === "page") {
+            this._pageListener = listener
+            return this
+        }
+
+        super.on(event, listener)
+        return this
     }
 }
