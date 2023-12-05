@@ -32,6 +32,18 @@ export const getQueriesFromPageNode = (pageNode: Readonly<PageNode>): Query[] =>
     return queries
 }
 
+export const getQueryStringsFromPageNode = (pageNode: Readonly<PageNode>): string[] => {
+    const queryStrings: string[] = []
+    queryStrings.push(
+        `MERGE (p: Page { title: ${pageNode.title}}) SET p.isRedirect = ${pageNode.isRedirect} SET p.namespace = ${pageNode.namespace}`
+    )
+    queryStrings.push(...[...pageNode.pageLinks].map<string>((title) => {
+        return `MERGE (linkedPage: Page { title: ${title} }) WITH linkedPage MATCH (page: Page { title: ${pageNode.title} }) CREATE (page)-[r: LINKS_TO]->(linkedPage)`
+    }))
+
+    return queryStrings
+}
+
 export const isPage = (partialPage: Partial<Page>): partialPage is Page => {
     if (
         partialPage.text == null ||
