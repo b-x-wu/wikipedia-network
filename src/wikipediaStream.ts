@@ -19,6 +19,7 @@ export class WikipediaStream extends Writable {
     constructor() {
         super()
         this._parser = new SAXParser(true)
+        this._parser.onerror = (e) => super.emit("error", e)
 
         this._parser.onopentag = (tag: Tag | QualifiedTag) => {
             if (tag.name === 'page') {
