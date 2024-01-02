@@ -2,3 +2,5 @@
 /dist
 *.txt
 .env
+*.xml*
+*.zip
