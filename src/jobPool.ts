@@ -1,5 +1,3 @@
-import Neo4j, { Driver, ManagedTransaction, SessionMode, driver } from 'neo4j-driver'
-
 export interface JobPoolOptions {
     maxConcurrentJobs: number
     onRejected: (reason: any) => void

@@ -9,7 +9,11 @@ export interface PageNode {
     title: string
     namespace: number
     isRedirect: boolean
-    pageLinks: Set<string> // titles of pages this page links to
+}
+
+export interface ArticleDbType {
+    _id: string
+    isRedirect: boolean
 }
 
 export interface Query {
