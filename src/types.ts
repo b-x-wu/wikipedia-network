@@ -12,8 +12,8 @@ export interface PageNode {
 }
 
 export interface PageEdge {
-    to: string
-    from: string
+    to: string // URI encoded
+    from: string // URI encoded
 }
 
 export interface Query {

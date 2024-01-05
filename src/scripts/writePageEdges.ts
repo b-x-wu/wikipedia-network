@@ -1,12 +1,12 @@
 import bz2 from "unbzip2-stream"
 import { ReadStream, createReadStream } from 'fs'
 import * as dotenv from "dotenv"
-import { WikipediaParser } from "./wikipediaParser"
-import { pageToPageNode } from "./pageUtils"
+import { WikipediaParser } from "../wikipediaParser"
+import { pageToPageEdges, pageToPageNode } from "../pageUtils"
 import Neo4j, { Session } from "neo4j-driver"
 import * as ConsoleStamp from 'console-stamp'
 import { Writable } from "stream"
-import { PageNode } from "./types"
+import { PageEdge, PageNode } from "../types"
 import * as fs from 'fs/promises'
 import { existsSync } from "fs"
 import { pathToFileURL } from "url"
@@ -14,9 +14,9 @@ import path from 'path'
 ConsoleStamp.default(console)
 dotenv.config()
 
-const WIKIPEDIA_ZIP_FILE_NAME = 'enwiki-20230820-pages-articles-multistream.xml.bz2'
-const PAGE_NODE_FILE_NAME = 'page_nodes.csv'
-const MAX_PAGE_NODE_BUFFER_SIZE = 20000
+const WIKIPEDIA_ZIP_FILE_NAME = process.env.WIKIPEDIA_ZIP_FILE_NAME ?? 'enwiki-20230820-pages-articles-multistream.xml.bz2'
+const PAGE_EDGE_FILE_NAME = 'page_edges.csv'
+const MAX_PAGE_EDGE_BUFFER_SIZE = 20000
 
 const main = async () => {
     let readStream: ReadStream | undefined
@@ -28,14 +28,14 @@ const main = async () => {
         }
     )
 
-    let pageNodeBuffer: PageNode[] = []
-    const writePageNodeBufferToFile = async () => {
+    let pageEdgeBuffer: PageEdge[] = []
+    const writePageEdgeBufferToFile = async () => {
         console.log('Writing out to csv...')
         await fs.writeFile(
-            PAGE_NODE_FILE_NAME,
-            pageNodeBuffer
-                .map((pageNode) => {
-                    return `${String.fromCharCode(31)}${pageNode.title}${String.fromCharCode(31)}${pageNode.isRedirect}`
+            PAGE_EDGE_FILE_NAME,
+            pageEdgeBuffer
+                .map((pageEdge) => {
+                    return `${String.fromCharCode(31)}${pageEdge.from}${String.fromCharCode(31)}${pageEdge.to}`
                 }).join('\n')
         )
         console.log('Wrote to csv.')
@@ -50,8 +50,8 @@ const main = async () => {
                     defaultAccessMode: Neo4j.session.WRITE
                 })
                 await session.executeWrite(async (tx): Promise<void> => {
-                    const result = await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' CREATE (p:Page {title: line[1], isRedirect: toBoolean(line[2])}) RETURN count(p)`)
-                    console.log(`Loaded ${result.records.at(0)?.get(0)} pages to Neo4j.`)
+                    await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_EDGE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' MATCH (from:Page {title: line[1]}), (to:Page {title: line[2]}) MERGE (from)-[:LINKS_TO]->(to)`)
+                    console.log('Loaded relationships to Neo4j.')
                 })
                 resolve()
             } catch (e) {
@@ -67,7 +67,7 @@ const main = async () => {
         await driver.close()
         if (err != null) console.error(err)
         if (readStream != null && !readStream.closed) readStream.close()
-        if (existsSync(PAGE_NODE_FILE_NAME)) await fs.unlink(PAGE_NODE_FILE_NAME)
+        if (existsSync(PAGE_EDGE_FILE_NAME)) await fs.unlink(PAGE_EDGE_FILE_NAME)
     }
 
     readStream = createReadStream(WIKIPEDIA_ZIP_FILE_NAME)
@@ -75,18 +75,18 @@ const main = async () => {
     const wikipediaParser = new WikipediaParser()
     wikipediaParser.onpage((page) => {
         if (page.namespace !== 0) return
-        const pageNode = pageToPageNode(page)
-        if (Math.random() < 0.001) console.log(`Adding page ${pageNode.title} to buffer.`)
-        pageNodeBuffer.push(pageNode)
+        const pageEdges = pageToPageEdges(page)
+        if (Math.random() < 0.001) console.log(`Adding edges for ${page.title} to buffer.`)
+        pageEdgeBuffer.push(...pageEdges)
     })
 
     const dbWriteStream = new Writable({
         write: (chunk, encoding, callback) => {
             (new Promise<void>(async (resolve, reject) => {
                 wikipediaParser.write(chunk.toString())
-                if (pageNodeBuffer.length >= MAX_PAGE_NODE_BUFFER_SIZE) {
-                    await writePageNodeBufferToFile()
-                    pageNodeBuffer = []
+                if (pageEdgeBuffer.length >= MAX_PAGE_EDGE_BUFFER_SIZE) {
+                    await writePageEdgeBufferToFile()
+                    pageEdgeBuffer = []
 
                     writeCsvToNeo4j().then(resolve).catch(reject)
                 } else {
@@ -98,7 +98,7 @@ const main = async () => {
     })
 
     dbWriteStream.on("finish", async () => {
-        await writePageNodeBufferToFile()
+        await writePageEdgeBufferToFile()
         await writeCsvToNeo4j()
         await cleanUp()
     })

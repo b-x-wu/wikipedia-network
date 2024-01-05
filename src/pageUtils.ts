@@ -13,7 +13,7 @@ export const pageToPageEdges = (page: Readonly<Page>): PageEdge[] => {
         [...page.text.matchAll(/\[\[(.*?)(?:\|.*?)*\]\]/g)]
             .map<string | undefined>((regExpMatchArray) => regExpMatchArray.at(1))
             .filter<string>((matchGroup): matchGroup is string => matchGroup != null)
-    )).map((to: string) => ({ from: page.title, to }))
+    )).map((to: string) => ({ from: encodeURIComponent(page.title), to: encodeURIComponent(to) }))
 }
 
 export const isPage = (partialPage: Partial<Page>): partialPage is Page => {
