@@ -4,7 +4,9 @@
   "description": "",
   "main": "./dist/index.js",
   "scripts": {
-    "start:write_page_nodes": "npx tsc && node ./dist/scripts/writePageNodes.js"
+    "start:write_page_nodes": "npx tsc && node ./dist/scripts/writePageNodes.js",
+    "start:write_page_edges": "npx tsc && node ./dist/scripts/writePageEdges.js",
+    "start:write_wikipedia_network": "npx tsc && echo \"Writing page nodes...\" && node ./dist/scripts/writePageNodes.js && echo \"Writing page edges\" && node ./dist/scripts/writePageEdges.js"
   },
   "keywords": [],
   "author": "",

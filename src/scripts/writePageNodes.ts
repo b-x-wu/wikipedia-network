@@ -14,7 +14,7 @@ import path from 'path'
 ConsoleStamp.default(console)
 dotenv.config()
 
-const WIKIPEDIA_ZIP_FILE_NAME = 'enwiki-20230820-pages-articles-multistream.xml.bz2'
+const WIKIPEDIA_ZIP_FILE_NAME = process.env.WIKIPEDIA_ZIP_FILE_NAME ?? 'enwiki-20230820-pages-articles-multistream.xml.bz2'
 const PAGE_NODE_FILE_NAME = 'page_nodes.csv'
 const MAX_PAGE_NODE_BUFFER_SIZE = 20000
 
