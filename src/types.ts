@@ -6,14 +6,14 @@ export interface Page {
 }
 
 export interface PageNode {
-    title: string
+    title: string // URI encoded
     namespace: number
     isRedirect: boolean
 }
 
-export interface ArticleDbType {
-    _id: string
-    isRedirect: boolean
+export interface PageEdge {
+    to: string
+    from: string
 }
 
 export interface Query {
