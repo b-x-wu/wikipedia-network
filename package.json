@@ -4,7 +4,7 @@
   "description": "",
   "main": "./dist/index.js",
   "scripts": {
-    "start:write_page_nodes": "npx tsc && node ./dist/writePageNodes.js"
+    "start:write_page_nodes": "npx tsc && node ./dist/scripts/writePageNodes.js"
   },
   "keywords": [],
   "author": "",
