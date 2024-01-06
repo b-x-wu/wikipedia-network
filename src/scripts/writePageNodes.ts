@@ -1,5 +1,5 @@
 import bz2 from "unbzip2-stream"
-import { ReadStream, createReadStream } from 'fs'
+import { ReadStream, createReadStream, createWriteStream, unlinkSync } from 'fs'
 import * as dotenv from "dotenv"
 import { WikipediaParser } from "../wikipediaParser"
 import { pageToPageNode } from "../pageUtils"
@@ -29,40 +29,25 @@ const main = async () => {
     )
 
     // set page title uniqueness constraint
-    await driver.executeQuery('CREATE CONSTRAINT page_title FOR (p:Page) REQUIRE p.title IS UNIQUE')
+    await driver.executeQuery('CREATE CONSTRAINT page_title IF NOT EXISTS FOR (p:Page) REQUIRE p.title IS UNIQUE')
+    // set page title index
+    await driver.executeQuery('CREATE TEXT INDEX page_title_index IF NOT EXISTS FOR (p:Page) ON (p. title)')
 
     let pageNodeBuffer: PageNode[] = []
-    const writePageNodeBufferToFile = async () => {
+    const writePageNodeBufferToFile = () => {
         console.log('Writing out to csv...')
-        await fs.writeFile(
-            PAGE_NODE_FILE_NAME,
-            pageNodeBuffer
-                .map((pageNode) => {
-                    return `${String.fromCharCode(31)}${pageNode.title}${String.fromCharCode(31)}${pageNode.isRedirect}`
-                }).join('\n')
-        )
-        console.log('Wrote to csv.')
-    }
-
-    const writeCsvToNeo4j = () => {
-        return new Promise<void>(async (resolve, reject) => {
-            console.log('Loading to Neo4j...')
-            let session: Session | undefined
-            try {
-                session = driver.session({
-                    defaultAccessMode: Neo4j.session.WRITE
-                })
-                await session.executeWrite(async (tx): Promise<void> => {
-                    await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' WITH line[1] AS title, toBoolean(line[2]) AS isRedirect MERGE (p:Page {title: title}) SET p.isRedirect = isRedirect RETURN count(p)`)
-                    console.log('Loaded to Neo4j.')
-                })
-                resolve()
-            } catch (e) {
-                reject(e)
-            } finally {
-                if (session != null) await session.close()
-            }
+        if (existsSync(PAGE_NODE_FILE_NAME)) unlinkSync(PAGE_NODE_FILE_NAME)
+        const fileWriteStream = createWriteStream(PAGE_NODE_FILE_NAME, {
+            flags: 'a'
         })
+        while (pageNodeBuffer.length > 0) {
+            const pageNode = pageNodeBuffer.shift()
+            if (pageNode != null) {
+                fileWriteStream.write(`${String.fromCharCode(31)}${pageNode.title}${String.fromCharCode(31)}${pageNode.isRedirect}\n`)
+            }
+        }
+        fileWriteStream.end()
+        console.log('Wrote to csv.')
     }
 
     const cleanUp = async (err?: Error) => {
@@ -85,28 +70,43 @@ const main = async () => {
 
     const dbWriteStream = new Writable({
         write: (chunk, encoding, callback) => {
-            (new Promise<void>(async (resolve, reject) => {
-                wikipediaParser.write(chunk.toString())
-                if (pageNodeBuffer.length >= MAX_PAGE_NODE_BUFFER_SIZE) {
-                    await writePageNodeBufferToFile()
-                    pageNodeBuffer = []
+            wikipediaParser.write(chunk.toString())
+            
+            if (pageNodeBuffer.length < MAX_PAGE_NODE_BUFFER_SIZE) {
+                callback()
+                return
+            }
 
-                    writeCsvToNeo4j().then(resolve).catch(reject)
-                } else {
-                    resolve()
-                }
-            })).then(() => callback()).catch(callback)
+            writePageNodeBufferToFile()
+            const session = driver.session({
+                defaultAccessMode: Neo4j.session.WRITE
+            })
+            session.executeWrite(async (tx): Promise<void> => {
+                await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' WITH line[1] AS title, toBoolean(line[2]) AS isRedirect MERGE (p:Page {title: title}) SET p.isRedirect = isRedirect`)
+            }).then(() => {
+                console.log('Loaded to Neo4j.')
+            }).catch(console.error).finally(() => {
+                return session.close()
+            }).then(() => { callback() }).catch(callback)
         },
         objectMode: true
     })
 
     dbWriteStream.on("finish", async () => {
-        await writePageNodeBufferToFile()
-        await writeCsvToNeo4j()
-        await cleanUp()
+        writePageNodeBufferToFile()
+        const session = driver.session({
+            defaultAccessMode: Neo4j.session.WRITE
+        })
+        session.executeWrite(async (tx): Promise<void> => {
+            await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' WITH line[1] AS title, toBoolean(line[2]) AS isRedirect MERGE (p:Page {title: title}) SET p.isRedirect = isRedirect RETURN count(p)`)
+        }).then(() => {
+            console.log('Loaded to Neo4j.')
+        }).catch(console.error).finally(() => {
+            return session.close()
+        }).finally(cleanUp)
     })
 
-    dbWriteStream.on("error", cleanUp);
+    dbWriteStream.on("error", cleanUp)
     readStream.pipe(bz2()).pipe(dbWriteStream)
 }
 
