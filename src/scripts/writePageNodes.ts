@@ -3,7 +3,7 @@ import { ReadStream, createReadStream, createWriteStream, unlinkSync } from 'fs'
 import * as dotenv from "dotenv"
 import { WikipediaParser } from "../wikipediaParser"
 import { pageToPageNode } from "../pageUtils"
-import Neo4j, { Session } from "neo4j-driver"
+import Neo4j from "neo4j-driver"
 import * as ConsoleStamp from 'console-stamp'
 import { Writable } from "stream"
 import { PageNode } from "../types"
@@ -40,14 +40,16 @@ const main = async () => {
         const fileWriteStream = createWriteStream(PAGE_NODE_FILE_NAME, {
             flags: 'a'
         })
+        let writeCount = 0
         while (pageNodeBuffer.length > 0) {
             const pageNode = pageNodeBuffer.shift()
             if (pageNode != null) {
+                writeCount++
                 fileWriteStream.write(`${String.fromCharCode(31)}${pageNode.title}${String.fromCharCode(31)}${pageNode.isRedirect}\n`)
             }
         }
         fileWriteStream.end()
-        console.log('Wrote to csv.')
+        console.log(`Wrote ${writeCount} nodes to csv.`)
     }
 
     const cleanUp = async (err?: Error) => {
@@ -81,13 +83,19 @@ const main = async () => {
             const session = driver.session({
                 defaultAccessMode: Neo4j.session.WRITE
             })
-            session.executeWrite(async (tx): Promise<void> => {
-                await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' WITH line[1] AS title, toBoolean(line[2]) AS isRedirect MERGE (p:Page {title: title}) SET p.isRedirect = isRedirect`)
-            }).then(() => {
-                console.log('Loaded to Neo4j.')
-            }).catch(console.error).finally(() => {
+            let callbackArg: Error | undefined
+            session.executeWrite(async (tx): Promise<number> => {
+                const result = await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_NODE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' WITH line[1] AS title, toBoolean(line[2]) AS isRedirect MERGE (p:Page {title: title}) SET p.isRedirect = isRedirect`)
+                return result.summary.updateStatistics.updates().nodesCreated
+            }).then((nodesCreated) => {
+                console.log(`Loaded ${nodesCreated} to Neo4j.`)
+            }).catch((reason) => {
+                callbackArg = reason as Error
+            }).finally(() => {
                 return session.close()
-            }).then(() => { callback() }).catch(callback)
+            }).then(() => {
+                callback(callbackArg)
+            }).catch(callback)
         },
         objectMode: true
     })

@@ -104,6 +104,10 @@ export class WikipediaParser {
         this._pageListener = callback
     }
 
+    onerror(callback: (error: Error) => void) {
+        this.parser.onerror = callback
+    }
+
     write(data: string): void {
         this.parser.write(data)
     }

@@ -22,9 +22,29 @@ const main = async () => {
     let readStream: ReadStream | undefined
     const driver = Neo4j.driver(
         process.env.NEO4J_URI ?? '',
-        Neo4j.auth.basic(process.env.NEO4J_USERNAME ?? '', process.env.NEO4J_PASSWORD ?? ''),
-        {
-            maxConnectionLifetime: 1000 * 60 * 5, // five minutes
+        Neo4j.auth.basic(process.env.NEO4J_USERNAME ?? '', process.env.NEO4J_PASSWORD ?? ''), {
+            maxConnectionLifetime: 0,
+            logging: {
+                level: 'debug',
+                logger: (level, message) => {
+                    if (level === 'debug') {
+                        console.debug(message)
+                        return
+                    }
+
+                    if (level === 'info') {
+                        console.info(message)
+                        return
+                    }
+
+                    if (level === 'warn') {
+                        console.warn(message)
+                        return
+                    }
+
+                    console.error(message)
+                }
+            }
         }
     )
 
@@ -35,14 +55,16 @@ const main = async () => {
         const fileWriteStream = createWriteStream(PAGE_EDGE_FILE_NAME, {
             flags: 'a'
         })
+        let writeCount = 0
         while (pageEdgeBuffer.length > 0) {
             const pageEdge = pageEdgeBuffer.shift()
             if (pageEdge != null) {
                 fileWriteStream.write(`${String.fromCharCode(31)}${pageEdge.from}${String.fromCharCode(31)}${pageEdge.to}\n`)
+                writeCount++
             }
         }
         fileWriteStream.end()
-        console.log('Wrote to csv.')
+        console.log(`Wrote ${writeCount} edges to csv.`)
     }
 
     const cleanUp = async (err?: Error) => {
@@ -58,30 +80,64 @@ const main = async () => {
     const wikipediaParser = new WikipediaParser()
     wikipediaParser.onpage((page) => {
         if (page.namespace !== 0) return
-        const pageEdges = pageToPageEdges(page)
-        if (Math.random() < 0.001) console.log(`Adding edges for ${page.title} to buffer.`)
-        pageEdgeBuffer.push(...pageEdges)
+        try {
+            console.log(`Processing edges for ${page.title}.`)
+            const pageEdges = pageToPageEdges(page)
+            console.log(`Adding edges for ${page.title} to buffer.`)
+            pageEdgeBuffer.push(...pageEdges)
+        } catch (e: any) {
+            cleanUp(e)
+        }
     })
+
+    wikipediaParser.onerror(cleanUp)
 
     const dbWriteStream = new Writable({
         write: (chunk, encoding, callback) => {
-            wikipediaParser.write(chunk.toString());
+            if (pageEdgeBuffer.length === 0) console.log("Pushing to clean page edge buffer.")
+            try {
+                console.log('Writing chunk to parser.')
+                wikipediaParser.write(chunk.toString());
+            } catch (e: any) {
+                console.error(`Error while writing chunk to parser: ${e.toString()}`)
+                callback(e as Error)
+                return
+            }
             
             if (pageEdgeBuffer.length < MAX_PAGE_EDGE_BUFFER_SIZE) {
+                console.log(`Current pageEdgeBuffer length is ${pageEdgeBuffer.length}. Continuing.`)
                 callback()
                 return
             }
 
-            const session = driver.session({ defaultAccessMode: Neo4j.session.WRITE })
-            writePageEdgeBufferToFile()
+            console.log('PageEdgeBuffer is full. Writing out to database.')
+            try {
+                writePageEdgeBufferToFile()
+            } catch (e: any) {
+                console.error(`Error while writing page edge buffer to file: ${e.toString()}`)
+                callback(e as Error)
+                return
+            }
             console.log('Loading to Neo4j...')
+            let callbackArg: Error | undefined
+            let session: Session | undefined
+            try {
+                session = driver.session({ defaultAccessMode: Neo4j.session.WRITE })
+            } catch (e: any) {
+                callback(e)
+                return
+            }
             session.executeWrite(async (tx) => {
-                await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_EDGE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' MATCH (from:Page {title: line[1]}), (to:Page {title: line[2]}) MERGE (from)-[:LINKS_TO]->(to)`)
-            }).then(() => {
-                console.log('Loaded to Neo4j.')
-            }).catch(console.error).finally(() => {
+                const results = await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_EDGE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' MATCH (from:Page {title: line[1]}), (to:Page {title: line[2]}) MERGE (from)-[:LINKS_TO]->(to)`)
+                return results.summary.updateStatistics.updates().relationshipsCreated
+            }).then((relationshipsCreated) => {
+                console.log(`Loaded ${relationshipsCreated} relationships to Neo4j.`)
+            }).catch((e: any) => {
+                callbackArg = e as Error
+            }).finally(() => {
+                if (session == null) return
                 return session.close()
-            }).then(() => { callback() }).catch(callback)
+            }).then(() => console.log("Closed session.")).then(() => { callback(callbackArg) }).catch(callback)
         },
         objectMode: true
     })
@@ -91,17 +147,29 @@ const main = async () => {
         writePageEdgeBufferToFile()
         console.log('Loading to Neo4j...')
         session.executeWrite(async (tx) => {
-            await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_EDGE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' MATCH (from:Page {title: line[1]}), (to:Page {title: line[2]}) MERGE (from)-[:LINKS_TO]->(to)`)
-        }).then(() => {
-            console.log('Loaded to Neo4j.')
+            const results = await tx.run(`LOAD CSV FROM '${pathToFileURL(path.resolve(PAGE_EDGE_FILE_NAME))}' AS line FIELDTERMINATOR '\\u001F' MATCH (from:Page {title: line[1]}), (to:Page {title: line[2]}) MERGE (from)-[:LINKS_TO]->(to)`)
+            return results.summary.updateStatistics.updates().relationshipsCreated
+        }).then((relationshipsCreated) => {
+            console.log(`Loaded ${relationshipsCreated} relationships to Neo4j.`)
         }).catch(console.error).finally(() => {
             return session.close()
         }).finally(cleanUp)
     })
 
     dbWriteStream.on("error", cleanUp)
+    dbWriteStream.on("close", () => console.log('Closed dbWriteStream'))
     readStream.on("error", cleanUp)
-    readStream.pipe(bz2()).pipe(dbWriteStream)
+    dbWriteStream.on("drain", () => console.log('Drained dbWriteStream'))
+    readStream.on("close", () => console.log('Closed readStream'))
+    readStream.on("end", () => console.log('Ended readStream'))
+    readStream.on("pause", () => console.log('Paused readStream'))
+    readStream.on("resume", () => console.log('Resumed readStream'))
+    const bz2Stream = bz2()
+    bz2Stream.on("error", cleanUp)
+    bz2Stream.on("pause", () => console.log('Paused bz2Stream'))
+    bz2Stream.on("resume", () => console.log('Resumed bz2Stream'))
+    bz2Stream.on("drain", () => console.log("Drained bz2Stream"))
+    readStream.pipe(bz2Stream).pipe(dbWriteStream)
 }
 
 main().catch(console.error)
