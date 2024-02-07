@@ -1,0 +1,22 @@
+services:
+  wikipedia-parser:
+    image: node:21-alpine
+    working_dir: /usr/app
+    volumes:
+      - ./:/usr/app
+    command: "npm i && npm start"
+    depends_on:
+      - neo4j
+
+  neo4j:
+    image: neo4j:latest
+    ports:
+      - 7474:7474
+      - 7687:7687
+    volumes:
+      - neo4j-data:/data
+    env_file:
+      - .env.neo4j
+
+volumes:
+  neo4j-data:
