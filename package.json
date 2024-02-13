@@ -4,9 +4,10 @@
   "description": "",
   "main": "./dist/index.js",
   "scripts": {
-    "start:write_page_nodes": "npx tsc && node ./dist/scripts/writePageNodes.js",
-    "start:write_page_edges": "npx tsc && node ./dist/scripts/writePageEdges.js",
-    "start:write_wikipedia_network": "npx tsc && echo \"Writing page nodes...\" && node ./dist/scripts/writePageNodes.js && echo \"Writing page edges\" && node ./dist/scripts/writePageEdges.js"
+    "add-torrent": "/usr/bin/transmission-remote --auth username:password --add https://people.wikimedia.org/~samtar/public/dumps/enwiki-20230820-pages-articles-multistream.xml.bz2.torrent --start",
+    "start-torrent": "/usr/bin/transmission-remote --auth username:password -tall --start",
+    "torrent": "npm run add-torrent && npm run start-torrent",
+    "write": "npx tsc && echo \"Writing page nodes...\" && node ./dist/scripts/writePageNodes.js && echo \"Writing page edges\" && node ./dist/scripts/writePageEdges.js"
   },
   "keywords": [],
   "author": "",
